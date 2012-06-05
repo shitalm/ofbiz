@@ -1,3 +1,9 @@
+.DS_Store
+specialpurpose/example/
+specialpurpose/scrum/
+framework/jcr/
+.idea/
+*.iml
 tools/build
 applications/accounting/build/
 applications/content/build/
