@@ -27,7 +27,7 @@ under the License.
         <field name="brandName" title="${uiLabelMap.ProductBrandName}"><text-find/></field>
         <field name="internalName" title="${uiLabelMap.ProductInternalName}"><text-find/></field>
         <field name="productTypeId" title="${uiLabelMap.ProductProductType}">
-            <drop-down allow-empty="true">
+            <drop-down allow-empty="true" no-current-selected-key="FINISHED_GOOD">
                 <entity-options entity-name="ProductType" description="${description}">
                     <entity-order-by field-name="description"/>
                 </entity-options>

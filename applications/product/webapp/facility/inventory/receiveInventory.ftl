@@ -73,6 +73,8 @@ under the License.
 
         <#-- Single Product Receiving -->
         <#if requestParameters.initialSelected?exists && product?has_content>
+        <#assign productCategory = (product.getRelatedOne("PrimaryProductCategory"))?if_exists/>
+
           <form method="post" action="<@ofbizUrl>receiveSingleInventoryProduct</@ofbizUrl>" name="selectAllForm">
             <table class="basic-table" cellspacing="0">
               <#-- general request fields -->
@@ -130,6 +132,16 @@ under the License.
                   <input type="text" name="itemDescription" size="30" maxlength="60"/>
                 </td>
               </tr>
+              
+            <tr>
+              <td width="14%">&nbsp;</td>
+              <td width="6%" align="right" nowrap="nowrap" class="label">${uiLabelMap.ProductProductCategory}</td>
+              <td width="6%">&nbsp;</td>
+              <td width="74%">
+                ${productCategory.categoryName?if_exists}
+              </td>
+            </tr>
+
               <tr>
                 <td width="14%">&nbsp;</td>
                 <td width="6%" align="right" nowrap="nowrap" class="label">${uiLabelMap.ProductInventoryItemType}</td>
