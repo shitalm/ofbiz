@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ofbiz-component name="oms4retail"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xsi:noNamespaceSchemaLocation="http://ofbiz.apache.org/dtds/ofbiz-component.xsd">
+    <resource-loader name="main" type="component"/>
+    <classpath type="jar" location="build/lib/*"/>
+    
+    <webapp name="omsfacility" title="OMS4Retail Facility" server="default-server" location="webapp/facility"
+        base-permission="OFBTOOLS,FACILITY" mount-point="/omsfacility"/>
+
+</ofbiz-component>
