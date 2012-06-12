@@ -135,6 +135,17 @@ under the License.
                 </td>
               </tr>
 
+              <#if !product.lotIdFilledIn?has_content || product.lotIdFilledIn != "Forbidden">
+              <tr>
+                <td width="14%">&nbsp;</td>
+                <td width="6%" align="right" nowrap="nowrap" class="label">${uiLabelMap.ProductLotId}</td>
+                <td width="6%">&nbsp;</td>
+                <td width="74%">
+                    <input type="text" name="lotId" size="20" />
+                </td>
+              </tr>
+              </#if>
+
               <tr>
                 <td width="14%">&nbsp;</td>
                 <td width="6%" align="right" nowrap="nowrap" class="label">${uiLabelMap.ProductProductCategory}</td>
