@@ -103,9 +103,70 @@ under the License.
         </if-empty>
     </simple-method>
 
+    <simple-method method-name="createLotIfRequired" short-description="Will create a lot if lot id does not exist">
+
+        <entity-one value-field="product" entity-name="Product">
+            <field-map from-field="parameters.productId" field-name="productId"/>
+        </entity-one>
+        <log level="info" message="createLotIfRequired productId=${product.productId} lotId=${parameters.lotId} lotIdFilledIn=${product.lotIdFilledIn} parameters.isReturned=${parameters.isReturned}" />
+
+        <!-- Check if this product can or not have a lotId -->
+        <if>
+            <condition>
+                <and>
+                    <if-compare operator="equals" value="Mandatory" field="product.lotIdFilledIn" />
+                    <if-empty field="parameters.lotId" />
+                </and>
+            </condition>
+            <then>
+                <add-error>
+                    <fail-property resource="ProductErrorUiLabels" property="ProductLotIdMandatory"/>
+                </add-error>
+            </then>
+        </if>
+
+        <if>
+            <condition>
+                <and>
+                    <if-compare operator="equals" value="Forbidden" field="product.lotIdFilledIn" />
+                       <not>
+                           <if-empty field="parameters.lotId" />
+                       </not>
+                </and>
+            </condition>
+            <then>
+                <add-error>
+                    <fail-property resource="ProductErrorUiLabels" property="ProductLotIdForbidden"/>
+                </add-error>
+            </then>
+        </if>
+
+        <check-errors />
+
+        <if-not-empty field="parameters.lotId">
+              <!-- Check if the lot already exists -->
+              <entity-and list="lotList" entity-name="Lot">
+                  <field-map field-name="lotId" from-field="parameters.lotId" />
+              </entity-and>
+              <if-empty field="lotList">
+                  <make-value value-field="lot" entity-name="Lot"/>
+                  <set field="lot.lotId" from-field="parameters.lotId"/>
+                  <create-value value-field="lot"/>
+              </if-empty>
+        </if-not-empty>
+
+    </simple-method>
+
     <!-- InventoryItem methods -->
     <simple-method method-name="createInventoryItem" short-description="Create an InventoryItem">
 
+        <!-- Create a lot before -->
+        <!-- If this InventoryItem is returned by a manufacturing task, don't create a lot -->
+        <if-compare operator="equals" value="N" field="parameters.isReturned">
+            <log level="info" message="this is not a returned product"/>
+            <call-simple-method method-name="createLotIfRequired"/>
+        </if-compare>
+        
         <make-value value-field="inventoryItem" entity-name="InventoryItem"/>
         <!-- TODO: make sure availableToPromiseTotal and quantityOnHandTotal are not changed -->
         <set-nonpk-fields map="parameters" value-field="inventoryItem"/>
@@ -243,6 +304,10 @@ under the License.
         </if-not-empty>
         <set field="oldUnitCost" from-field="lookedUpValue.unitCost"/>
         <set-nonpk-fields map="parameters" value-field="lookedUpValue"/>
+        
+        <!-- Create a lot before -->
+        <call-simple-method method-name="createLotIfRequired"/>
+
         <store-value value-field="lookedUpValue"/>
         <!-- if the unit cost is changed create an InventoryItemDetail to keep track of unit cost history -->
         <if-not-empty field="parameters.unitCost">
@@ -608,6 +673,7 @@ under the License.
         <set from-field="parameters.facilityId" field="lookupFieldMap.facilityId"/>
         <set from-field="parameters.locationSeqId" field="lookupFieldMap.locationSeqId"/>
         <set from-field="parameters.containerId" field="lookupFieldMap.containerId"/>
+        <set from-field="parameters.lotId" field="lookupFieldMap.lotId"/>
         <!-- we might get away with a cache here since real serious errors will occur during the reservation service... but only if we need the speed -->
         <find-by-and entity-name="InventoryItem" map="lookupFieldMap" list="inventoryItems" use-iterator="true" use-cache="${parameters.useCache}"/>
 

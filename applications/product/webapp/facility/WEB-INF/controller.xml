@@ -660,6 +660,13 @@ under the License.
         <response name="success" type="view" value="PicklistManage"/>
         <response name="error" type="view" value="PicklistManage"/>
     </request-map>
+    <request-map uri="editPicklistItem">
+        <security https="true" auth="true" />
+        <event type="service" path="" invoke="editPicklistItem"/>
+        <response name="success" type="view" value="PicklistManage"/>
+        <response name="error" type="view" value="PicklistManage"/>
+    </request-map>
+
 
     <request-map uri="PicklistReport.pdf">
         <security https="true" auth="true"/>

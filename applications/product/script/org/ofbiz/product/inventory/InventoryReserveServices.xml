@@ -86,6 +86,7 @@ under the License.
                         <condition-expr field-name="productId" from-field="parameters.productId"/>
                         <condition-expr field-name="facilityId" from-field="parameters.facilityId" ignore-if-empty="true" ignore-if-null="true"/>
                         <condition-expr field-name="containerId" from-field="parameters.containerId" ignore-if-empty="true" ignore-if-null="true"/>
+                        <condition-expr field-name="lotId" from-field="parameters.lotId" ignore-if-empty="true" ignore-if-null="true"/>
                         <condition-expr field-name="quantityOnHandTotal" operator="greater" value="0.0"/>
                         <condition-expr field-name="locationTypeEnumId" operator="equals" value="FLT_PICKLOC"/>
                     </condition-list>
@@ -106,6 +107,7 @@ under the License.
                             <condition-expr field-name="productId" from-field="parameters.productId"/>
                             <condition-expr field-name="facilityId" from-field="parameters.facilityId" ignore-if-empty="true" ignore-if-null="true"/>
                             <condition-expr field-name="containerId" from-field="parameters.containerId" ignore-if-empty="true" ignore-if-null="true"/>
+                            <condition-expr field-name="lotId" from-field="parameters.lotId" ignore-if-empty="true" ignore-if-null="true"/>
                             <condition-expr field-name="quantityOnHandTotal" operator="greater" value="0.0"/>
                             <condition-expr field-name="locationTypeEnumId" operator="equals" value="FLT_BULK"/>
                         </condition-list>
@@ -127,6 +129,7 @@ under the License.
                             <condition-expr field-name="productId" from-field="parameters.productId"/>
                             <condition-expr field-name="facilityId" from-field="parameters.facilityId" ignore-if-empty="true" ignore-if-null="true"/>
                             <condition-expr field-name="containerId" from-field="parameters.containerId" ignore-if-empty="true" ignore-if-null="true"/>
+                            <condition-expr field-name="lotId" from-field="parameters.lotId" ignore-if-empty="true" ignore-if-null="true"/>
                             <condition-expr field-name="quantityOnHandTotal" operator="greater" value="0.0"/>
                             <condition-expr field-name="locationSeqId" operator="equals" from-field="nullField"/>
                         </condition-list>
