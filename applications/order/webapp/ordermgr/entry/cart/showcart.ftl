@@ -89,6 +89,7 @@ under the License.
                       <#else>
                         <#assign fieldFormName="LookupProduct">
                       </#if>
+                          <#--<script>alert("hi");</script>-->
                       <@htmlTemplate.lookupField formName="quickaddform" name="add_product_id" id="add_product_id" fieldFormName="${fieldFormName}"/>
                       <a href="javascript:quicklookup(document.quickaddform.add_product_id)" class="buttontext">${uiLabelMap.OrderQuickLookup}</a>
                       <a href="javascript:quicklookupGiftCertificate()" class="buttontext">${uiLabelMap.OrderAddGiftCertificate}</a>

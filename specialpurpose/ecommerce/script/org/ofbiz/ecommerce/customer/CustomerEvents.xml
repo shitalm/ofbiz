@@ -25,6 +25,7 @@ under the License.
         <call-class-method class-name="org.ofbiz.product.store.ProductStoreWorker" method-name="getProductStore" ret-field="productStore">
             <field field="request" type="javax.servlet.ServletRequest"/>
         </call-class-method>
+        <log level="info" message="Product store: ${productStore}" />
 
         <set from-field="productStore.allowPassword" field="allowPassword"/>
         <set from-field="productStore.defaultPassword" field="defaultPassword"/>
@@ -42,6 +43,18 @@ under the License.
         <set value="CUSTOMER" field="parameters.roleTypeId"/>
 
         <if-compare field="allowPassword" operator="not-equals" value="Y">
+            <set field="useDefaultPassword" value="Y"/>
+        </if-compare>
+
+        <if-compare field="parameters.USE_DEFAULTS" operator="equals" value="true">
+            <set field="useDefaultPassword" value="Y"/>
+            <set field="parameters.USER_FIRST_NAME" from-field="parameters.USERNAME"/>
+            <set field="parameters.USER_LAST_NAME" value=" "/>
+            <set field="parameters.USE_ADDRESS" value="false"/>
+            <set field="parameters.REQUIRE_EMAIL" value="false"/>
+        </if-compare>
+
+        <if-compare field="useDefaultPassword" operator="equals" value="Y">
             <set from-field="defaultPassword" field="parameters.PASSWORD"/>
             <set from-field="defaultPassword" field="parameters.CONFIRM_PASSWORD"/>
             <set value="No hint set, account not yet enabled" field="parameters.PASSWORD_HINT"/>

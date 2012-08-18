@@ -7,5 +7,14 @@
     
     <webapp name="omsfacility" title="OMS4Retail Facility" server="default-server" location="webapp/facility"
         base-permission="OFBTOOLS,FACILITY" mount-point="/omsfacility"/>
+    <webapp name="omsorder" title="OMS4Retail Order" server="default-server" location="webapp/ordermgr"
+        base-permission="OFBTOOLS,ORDERMGR" mount-point="/omsorder"/>
+    <webapp name="omsecomm"
+        title="eCommerce"
+        server="default-server"
+        location="webapp/ecommerce"
+        mount-point="/omsecomm"
+        app-bar-display="false"/>
+
 
 </ofbiz-component>

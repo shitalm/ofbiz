@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site-conf xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:noNamespaceSchemaLocation="http://ofbiz.apache.org/dtds/site-conf.xsd">
+    <include location="component://ecommerce/webapp/ecommerce/WEB-INF/controller.xml"/>
+
+    <description>OMS4Retail ecommerce extension</description>
+    <owner>Copyright 2001-2009 The Apache Software Foundation</owner>
+
+    <!-- Request Mappings -->
+    <request-map uri="newcustomer">
+        <security https="true" auth="false"/>
+        <response name="success" type="view" value="simplenewcustomer"/>
+    </request-map>
+    <request-map uri="createcustomer">
+        <security https="true" auth="false"/>
+        <event type="simple" path="component://ecommerce/script/org/ofbiz/ecommerce/customer/CustomerEvents.xml" invoke="createCustomer"/>
+        <response name="success" type="view" value="main"/>
+        <response name="error" type="view" value="simplenewcustomer"/>
+    </request-map>
+
+
+    <!-- end of request mappings -->
+
+    <!-- View Mappings -->
+    <view-map name="simplenewcustomer" type="screen" page="component://oms4retail/widget/ecommerce/CustomerScreens.xml#simplenewcustomer"/>
+
+    <!-- end of view mappings -->
+</site-conf>
