@@ -1,0 +1,28 @@
+Source code browse location: https://github.com/shitalm/ofbiz/tree/release10.04
+
+To start coding:
+1) git clone https://github.com/shitalm/ofbiz 
+2) switch to branch release10.04
+
+Strongly advised to go through https://cwiki.apache.org/OFBIZ/ofbiz-tutorial-a-beginners-development-guide.html before beginning any coding.
+
+Original :
+https://ec2-204-236-210-93.compute-1.amazonaws.com:8443/facility/control/main
+Customized :
+https://ec2-204-236-210-93.compute-1.amazonaws.com:8443/omsfacility/control/main
+
+Original : 
+https://ec2-204-236-210-93.compute-1.amazonaws.com:8443/ordermgr
+Customized:
+https://ec2-204-236-210-93.compute-1.amazonaws.com:8443/omsorder
+
+Original :
+http://ec2-204-236-210-93.compute-1.amazonaws.com:8080/ecommerce
+Customized :
+http://ec2-204-236-210-93.compute-1.amazonaws.com:8080/omsecomm
+
+Customizations in Facility and order screens:
+According to PRD at https://sites.google.com/site/oms4retail1/wireframes?pli=1 Only ReceiveInv_20120307.pdf has been implemented so far.
+
+Customizations in Ecommerce webapp:
+Simplified login. User can just enter his phone number and we create an account with his phone number and default password (@1234) automatically.
