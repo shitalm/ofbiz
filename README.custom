@@ -6,6 +6,8 @@ To start coding:
 
 Strongly advised to go through https://cwiki.apache.org/OFBIZ/ofbiz-tutorial-a-beginners-development-guide.html before beginning any coding.
 
+login: admin/ofbiz
+
 Original :
 https://ec2-204-236-210-93.compute-1.amazonaws.com:8443/facility/control/main
 Customized :
