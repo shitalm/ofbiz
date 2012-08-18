@@ -1,0 +1,935 @@
+From 4d86c64e46dad09629ee871f3b3723736279ab47 Mon Sep 17 00:00:00 2001
+From: Jacques Le Roux <jleroux@apache.org>
+Date: Sat, 29 Oct 2011 21:09:38 +0000
+Subject: [PATCH] A modified patch from Pierre TALLOTTE "Managing of lot number and tracking" https://issues.apache.org/jira/browse/OFBIZ-4172
+
+This patch adds features which allows a, user to manage products by lot id :
+    when s/he buys a product, s/he can specify the lot id ;
+    each time s/he produces an inventory item in manufacturing, s/he can specify the lot id ;
+    s/he can choose the lot s/he wants when s/he makes a sale order or a manufacturing process ;
+    there is a new screen which allows the user to realize the tracking of lots.
+
+jleroux: apart some formatting and typos, I used only availableToPromiseTotal (instead of also quantityOnHandTotal) when checking the stock of a lot while editing a Picklist Item.
+Note: I only reviewed the code, but did not find enough time to test. As the code was straightforward I decided to add it
+
+git-svn-id: https://svn.apache.org/repos/asf/ofbiz/trunk@1195037 13f79535-47bb-0310-9956-ffa450edef68
+---
+ .../manufacturing/config/ManufacturingUiLabels.xml |    1 +
+ .../jobshopmgt/ProductionRunServices.xml           |    7 +
+ .../servicedef/services_production_run.xml         |    5 +
+ .../jobshopmgt/ProductionRunServices.java          |    9 +-
+ .../widget/manufacturing/ProductionRunForms.xml    |   10 +
+ .../product/config/ProductErrorUiLabels.xml        |   20 ++
+ applications/product/config/ProductUiLabels.xml    |   44 +++++
+ applications/product/data/ProductHelpData.xml      |   15 ++
+ applications/product/entitydef/entitymodel.xml     |    2 +
+ .../product/entitydef/entitymodel_shipment.xml     |    1 +
+ .../product/inventory/InventoryReserveServices.xml |    3 +
+ .../ofbiz/product/inventory/InventoryServices.xml  |   56 ++++++-
+ .../ofbiz/shipment/picklist/PicklistServices.xml   |  203 ++++++++++++++++++++
+ .../product/servicedef/services_facility.xml       |    4 +
+ .../product/servicedef/services_picklist.xml       |   10 +
+ .../product/webapp/facility/WEB-INF/controller.xml |   12 ++
+ .../webapp/facility/facility/PicklistManage.ftl    |   50 +++++
+ .../webapp/facility/inventory/receiveInventory.ftl |   16 ++-
+ .../product/widget/catalog/ProductForms.xml        |    9 +
+ .../product/widget/catalog/ProductStoreForms.xml   |    9 +-
+ .../product/widget/facility/FacilityMenus.xml      |    1 +
+ 21 files changed, 482 insertions(+), 5 deletions(-)
+
+diff --git a/applications/manufacturing/config/ManufacturingUiLabels.xml b/applications/manufacturing/config/ManufacturingUiLabels.xml
+index d77cd1e..0de7a79 100644
+--- a/applications/manufacturing/config/ManufacturingUiLabels.xml
++++ b/applications/manufacturing/config/ManufacturingUiLabels.xml
+@@ -196,6 +196,7 @@
+     </property>
+     <property key="FormFieldTitle_lotId">
+         <value xml:lang="en">Lot Id</value>
++        <value xml:lang="fr">RÃƒÂ©f. de lot</value>
+         <value xml:lang="it">Numero lotto</value>
+         <value xml:lang="pt_BR">Id do lote</value>
+         <value xml:lang="zh">批次标识</value>
+diff --git a/applications/manufacturing/script/org/ofbiz/manufacturing/jobshopmgt/ProductionRunServices.xml b/applications/manufacturing/script/org/ofbiz/manufacturing/jobshopmgt/ProductionRunServices.xml
+index 4d3a476..5fbcc6e 100644
+--- a/applications/manufacturing/script/org/ofbiz/manufacturing/jobshopmgt/ProductionRunServices.xml
++++ b/applications/manufacturing/script/org/ofbiz/manufacturing/jobshopmgt/ProductionRunServices.xml
+@@ -105,6 +105,13 @@ under the License.
+             <field-to-list field="orderByString" list="orderByList"/>
+             <set from-field="productId" field="lookupFieldMap.productId"/>
+             <set from-field="workEffort.facilityId" field="lookupFieldMap.facilityId"/>
++            
++            <!-- if lotId is passed, failIfItemsAreNotAvailable is set to automatically set to "Y" -->
++            <if-not-empty field="parameters.lotId">
++                <set field="parameters.failIfItemsAreNotAvailable" value="Y"/>
++                <set field="lookupFieldMap.lotId" from-field="parameters.lotId"/>
++            </if-not-empty>
++            
+             <!-- if locationSeqId is passed, then only the inventory items in the location are considered -->
+             <if-not-empty field="parameters.locationSeqId">
+                 <set from-field="parameters.locationSeqId" field="lookupFieldMap.locationSeqId"/>
+diff --git a/applications/manufacturing/servicedef/services_production_run.xml b/applications/manufacturing/servicedef/services_production_run.xml
+index 0fe3591..ebfac30 100644
+--- a/applications/manufacturing/servicedef/services_production_run.xml
++++ b/applications/manufacturing/servicedef/services_production_run.xml
+@@ -195,6 +195,7 @@ under the License.
+             no reservation will be stolen.
+             If failIfItemsAreNotOnHand is set to "Y" (the default is "Y") then the service fails if there is not enough inventory:
+             no items with negative qoh will be created.
++            If lotId is filled, failIfItemsAreNotAvailable is set to automatically set to "Y".
+         </description>
+         <attribute name="workEffortId" type="String" mode="IN" optional="false"/>
+         <attribute name="productId" type="String" mode="IN" optional="false"/>
+@@ -203,6 +204,7 @@ under the License.
+         <attribute name="failIfItemsAreNotAvailable" type="String" mode="IN" optional="true"/>
+         <attribute name="failIfItemsAreNotOnHand" type="String" mode="IN" optional="true"/>
+         <attribute name="reserveOrderEnumId" type="String" mode="IN" optional="true"/>
++        <attribute name="lotId" mode="IN" type="String" optional="true" />
+         <attribute name="locationSeqId" type="String" mode="IN" optional="true"/>
+         <attribute name="secondaryLocationSeqId" type="String" mode="IN" optional="true"/>
+         <attribute name="reasonEnumId" type="String" mode="IN" optional="true"/>
+@@ -260,6 +262,8 @@ under the License.
+         <attribute name="currencyUomId" type="String" mode="IN" optional="true"/>
+         <attribute name="inventoryItemTypeId" type="String" mode="IN" optional="true"/>
+         <attribute name="inventoryItemIds" type="List" mode="OUT" optional="false"/>
++        <attribute name="lotId" mode="IN" type="String" optional="true" />
++        <attribute name="isReturned" mode="IN" type="String" optional="true" default-value="N"></attribute>
+     </service>
+     <service name="productionRunTaskReturnMaterial" engine="java"
+             location="org.ofbiz.manufacturing.jobshopmgt.ProductionRunServices" invoke="productionRunTaskReturnMaterial" auth="true">
+@@ -270,6 +274,7 @@ under the License.
+         <attribute name="productId" type="String" mode="IN" optional="false"/>
+         <attribute name="quantity" type="BigDecimal" mode="IN" optional="true"/>
+         <attribute name="inventoryItemTypeId" type="String" mode="IN" optional="true"/>
++        <attribute name="lotId" mode="IN" type="String" optional="true" />
+     </service>
+     <service name="checkDecomposeInventoryItem" engine="java"
+             location="org.ofbiz.manufacturing.jobshopmgt.ProductionRunServices" invoke="checkDecomposeInventoryItem" auth="true">
+diff --git a/applications/manufacturing/src/org/ofbiz/manufacturing/jobshopmgt/ProductionRunServices.java b/applications/manufacturing/src/org/ofbiz/manufacturing/jobshopmgt/ProductionRunServices.java
+index 37fac26..4182b69 100644
+--- a/applications/manufacturing/src/org/ofbiz/manufacturing/jobshopmgt/ProductionRunServices.java
++++ b/applications/manufacturing/src/org/ofbiz/manufacturing/jobshopmgt/ProductionRunServices.java
+@@ -1864,6 +1864,8 @@ public class ProductionRunServices {
+         String currencyUomId = (String)context.get("currencyUomId");
+         BigDecimal unitCost = (BigDecimal)context.get("unitCost");
+         String inventoryItemTypeId = (String)context.get("inventoryItemTypeId");
++        String lotId = (String)context.get("lotId");
++        String isReturned = (String)context.get("isReturned");
+ 
+         // The default is non-serialized inventory item
+         if (UtilValidate.isEmpty(inventoryItemTypeId)) {
+@@ -1890,7 +1892,9 @@ public class ProductionRunServices {
+                         serviceContext.put("unitCost", unitCost);
+                         serviceContext.put("currencyUomId", currencyUomId);
+                     }
++                    serviceContext.put("lotId",    lotId);
+                     serviceContext.put("userLogin", userLogin);
++                    serviceContext.put("isReturned", isReturned);
+                     Map<String, Object> resultService = dispatcher.runSync("createInventoryItem", serviceContext);
+                     String inventoryItemId = (String)resultService.get("inventoryItemId");
+                     serviceContext.clear();
+@@ -1926,7 +1930,9 @@ public class ProductionRunServices {
+                     serviceContext.put("unitCost", unitCost);
+                     serviceContext.put("currencyUomId", currencyUomId);
+                 }
++                serviceContext.put("lotId", lotId);
+                 serviceContext.put("userLogin", userLogin);
++                serviceContext.put("isReturned", isReturned);
+                 Map<String, Object> resultService = dispatcher.runSync("createInventoryItem", serviceContext);
+                 String inventoryItemId = (String)resultService.get("inventoryItemId");
+ 
+@@ -1965,6 +1971,7 @@ public class ProductionRunServices {
+         String productId = (String)context.get("productId");
+         // Optional input fields
+         BigDecimal quantity = (BigDecimal)context.get("quantity");
++        String lotId = (String)context.get("lotId");
+         Locale locale = (Locale) context.get("locale");
+         if (quantity == null || quantity.compareTo(ZERO) == 0) {
+             return ServiceUtil.returnSuccess();
+@@ -2009,7 +2016,7 @@ public class ProductionRunServices {
+         try {
+             Map<String, Object> inventoryResult = dispatcher.runSync("productionRunTaskProduce", 
+                     UtilMisc.<String, Object>toMap("workEffortId", productionRunTaskId,
+-                            "productId", productId, "quantity", quantity,
++                            "productId", productId, "quantity", quantity, "lotId", lotId, "isReturned", "Y",
+                             "inventoryItemTypeId", inventoryItemTypeId, "userLogin", userLogin));
+             if (ServiceUtil.isError(inventoryResult)) {
+                 return ServiceUtil.returnError(UtilProperties.getMessage(resource, "ManufacturingProductionRunTaskProduceError" + ServiceUtil.getErrorMessage(inventoryResult), locale));
+diff --git a/applications/manufacturing/widget/manufacturing/ProductionRunForms.xml b/applications/manufacturing/widget/manufacturing/ProductionRunForms.xml
+index 1c3a5c4..71fe51b 100644
+--- a/applications/manufacturing/widget/manufacturing/ProductionRunForms.xml
++++ b/applications/manufacturing/widget/manufacturing/ProductionRunForms.xml
+@@ -434,6 +434,9 @@ under the License.
+                 </entity-options>
+             </drop-down>
+         </field>
++        <field name="lotId">
++            <text />
++        </field>
+         <field name="submitButton" title="${uiLabelMap.CommonSubmit}"><submit/></field>
+     </form>
+     <form name="ListReturnProductionRunDeclComponents" type="multi" use-row-submit="true" target="productionRunTaskReturnMaterials?productionRunId=${productionRunId}" title="" list-name="productionRunComponentsAlreadyIssued"
+@@ -451,6 +454,7 @@ under the License.
+         <field name="estimatedQuantity" title="${uiLabelMap.ManufacturingQuantity}"><display also-hidden="false"/></field>
+         <field name="issuedQuantity" title="${uiLabelMap.ManufacturingIssuedQuantity}"><display also-hidden="false"/></field>
+         <field name="returnedQuantity" title="${uiLabelMap.ManufacturingReturnedQuantity}"><display also-hidden="false"/></field>
++        <field name="lotId" title="${uiLabelMap.ProductLotId}"><text /></field>
+         <field name="quantity" title="${uiLabelMap.CommonQuantity}"><text/></field>
+         <field name="_rowSubmit" title="${uiLabelMap.CommonSelected}"><check/></field>
+         <field name="submitButton" title="${uiLabelMap.CommonSubmit}"><submit/></field>
+@@ -542,6 +546,9 @@ under the License.
+         <field name="quantity" title="${uiLabelMap.ManufacturingAddQuantityProduced}">
+             <text/>
+         </field>
++        <field name="lotId" title="${uiLabelMap.ProductLotId}">
++            <text />
++        </field>
+         <field name="submitButton" title="${uiLabelMap.CommonAdd}">
+             <submit button-type="button"/>
+         </field>
+@@ -966,6 +973,9 @@ under the License.
+         <field name="productId">
+             <lookup target-form-name="LookupProduct"/>
+         </field>
++        <field name="lotId" title="${uiLabelMap.ProductLotId}">
++            <text />
++        </field>
+         <field name="reasonEnumId">
+             <drop-down allow-empty="true">
+                 <entity-options entity-name="Enumeration" key-field-name="enumId" description="${description}">
+diff --git a/applications/product/config/ProductErrorUiLabels.xml b/applications/product/config/ProductErrorUiLabels.xml
+index 4008cdb..dc488ec 100644
+--- a/applications/product/config/ProductErrorUiLabels.xml
++++ b/applications/product/config/ProductErrorUiLabels.xml
+@@ -1116,6 +1116,26 @@
+         <value xml:lang="zh">创建快速添加变型数据时发生交易错误：${errMessage}。</value>
+         <value xml:lang="zh_TW">創建快速添加變型資料時發生交易錯誤: ${errMessage}。</value>
+     </property>
++    <property key="PicklistManageTooMuchQuantity">
++        <value xml:lang="en">The quantity entered (${parameters.quantity}) is higher than the quantity expected (${picklistItem.quantity}).</value>
++        <value xml:lang="fr">La quantitÃƒÂ© entrÃƒÂ©e (${parameters.quantity}) est supÃƒÂ©rieure ÃƒÂ  la quantitÃƒÂ© attendue (${picklistItem.quantity}).</value>
++    </property>
++    <property key="PicklistManageNoLinkProductAndLot">
++        <value xml:lang="en">There is no link between the lot ${parameters.lotId} and the product ${parameters.productId}.</value>
++        <value xml:lang="fr">Il n'y a pas de lien entre le lot ${parameters.lotId} et le produit ${parameters.productId}.</value>
++    </property>
++    <property key="PicklistManageStockLow">
++        <value xml:lang="en">Not enough stock for this lot.</value>
++        <value xml:lang="fr">Pas assez de stock pour ce lot.</value>
++    </property>
++    <property key="ProductLotIdMandatory">
++        <value xml:lang="en">The lotId is mandatory for the product ${parameters.productId}.</value>
++        <value xml:lang="fr">Le numÃƒÂ©ro de lot est obligatoire pour ce produit ${parameters.productId}.</value>
++    </property>
++    <property key="ProductLotIdForbidden">
++        <value xml:lang="en">The lotId is forbidden for the product ${parameters.productId}.</value>
++        <value xml:lang="fr">Le numÃƒÂ©ro de lot est interdit pour ce produit ${parameters.productId}.</value>
++    </property>
+     <property key="variantevents.variantProductId_required_but_missing_enter_an_id">
+         <value xml:lang="de">variantProductId wir benötigt fehlt aber, bitte geben Sie eine ID für die neue Produktvariante an.</value>
+         <value xml:lang="en">variantProductId is required but missing, please enter an id for the new variant product.</value>
+diff --git a/applications/product/config/ProductUiLabels.xml b/applications/product/config/ProductUiLabels.xml
+index 2a5b263..ca0d062 100644
+--- a/applications/product/config/ProductUiLabels.xml
++++ b/applications/product/config/ProductUiLabels.xml
+@@ -24879,6 +24879,50 @@
+         <value xml:lang="zh">警告：订单类型是</value>
+         <value xml:lang="zh_TW">警告：訂單類型是</value>
+     </property>
++    <property key="Tracking">
++        <value xml:lang="en">Tracking</value>
++        <value xml:lang="fr">TraÃƒÂ§abilitÃƒÂ©</value>
++    </property>
++    <property key="SearchTracking">
++        <value xml:lang="en">Search of a tracking</value>
++        <value xml:lang="fr">Recherche d'un suivi</value>
++    </property>
++    <property key="ResultTracking">
++        <value xml:lang="en">Search result</value>
++        <value xml:lang="fr">RÃƒÂ©sultat de la recherche</value>
++    </property>
++    <property key="TrackingType">
++        <value xml:lang="en">Type of tracking</value>
++        <value xml:lang="fr">Type de suivi</value>
++    </property>
++    <property key="TrackingTypeSale">
++        <value xml:lang="en">Sale</value>
++        <value xml:lang="fr">Vente</value>
++    </property>
++    <property key="TrackingTypeDownstream">
++        <value xml:lang="en">Downstream</value>
++        <value xml:lang="fr">Aval</value>
++    </property>
++    <property key="TrackingTypeUpstream">
++        <value xml:lang="en">Upstream</value>
++        <value xml:lang="fr">Amont</value>
++    </property>
++    <property key="lotIdFilledInForbidden">
++        <value xml:lang="en">Forbidden</value>
++        <value xml:lang="fr">Interdit</value>
++    </property>
++    <property key="lotIdFilledInAllowed">
++        <value xml:lang="en">Allowed</value>
++        <value xml:lang="fr">Facultatif</value>
++    </property>
++    <property key="lotIdFilledInMandatory">
++        <value xml:lang="en">Mandatory</value>
++        <value xml:lang="fr">Obligatoire</value>
++    </property>
++    <property key="ProductManagedByLot">
++        <value xml:lang="en">Lots managing</value>
++        <value xml:lang="fr">Gestion des lots</value>
++    </property>
+     <property key="ProductWarningProductNotVirtual">
+         <value xml:lang="en">This product is not a virtual product, variants will not generally be used.</value>
+         <value xml:lang="es">Este producto no es virtual, generalmente no se usan variantes.</value>
+diff --git a/applications/product/data/ProductHelpData.xml b/applications/product/data/ProductHelpData.xml
+index 9c98f6f..9ea4596 100644
+--- a/applications/product/data/ProductHelpData.xml
++++ b/applications/product/data/ProductHelpData.xml
+@@ -31,4 +31,19 @@ under the License.
+     <Content contentId="IMAGEMANAGEMENT_MAIN" contentTypeId="DOCUMENT" contentName="Image Management" templateDataResourceId="HELP_TEMPL" dataResourceId="IMAGEMANAGEMENT_MAIN" statusId="CTNT_IN_PROGRESS" mimeTypeId="text/html"/>
+     <ContentAssoc contentId="PRODCATALOG_main" contentIdTo="IMAGEMANAGEMENT_MAIN" contentAssocTypeId="TREE_CHILD" fromDate="2006-01-12 01:01:01" sequenceNum="01" mapKey="PRODUCT_Imagemanagement"/>
+ 
++    <!-- Facility help pages -->
++    <DataResource dataResourceId="HELP_FACILITY" localeString="en" dataResourceTypeId="OFBIZ_FILE" 
++        objectInfo="applications/product/data/helpdata/HELP_FACILITY.xml" dataTemplateTypeId="NONE" statusId="CTNT_IN_PROGRESS"
++        dataResourceName="Help system Facility" mimeTypeId="text/xml" isPublic="Y" />
++    <Content contentId="HELP_FACILITY" contentTypeId="DOCUMENT" contentName="Facility" templateDataResourceId="HELP_TEMPL" 
++        dataResourceId="HELP_FACILITY" statusId="CTNT_IN_PROGRESS" mimeTypeId="text/html"/>
++    <ContentAssoc contentId="HELP_ROOT" contentIdTo="HELP_FACILITY" contentAssocTypeId="TREE_CHILD" fromDate="2006-01-12 01:01:01" sequenceNum="000"/>
++
++    <DataResource dataResourceId="HELP_FACILITY_Tracking" localeString="en" dataResourceTypeId="OFBIZ_FILE" objectInfo="applications/product/data/helpdata/HELP_FACILITY_Tracking.xml" dataTemplateTypeId="NONE" statusId="CTNT_IN_PROGRESS" dataResourceName="Help system Facility Tracking" mimeTypeId="text/xml" isPublic="Y" />
++    <Content contentId="HELP_FACILITY_Tracking" contentTypeId="DOCUMENT" localeString="en" contentName="Facility Tracking" templateDataResourceId="HELP_TEMPL" dataResourceId="HELP_FACILITY_Tracking" statusId="CTNT_IN_PROGRESS" mimeTypeId="text/html"/>
++    <ContentAssoc contentId="HELP_FACILITY" contentIdTo="HELP_FACILITY_Tracking" contentAssocTypeId="TREE_CHILD" fromDate="2006-01-12 01:01:01" sequenceNum="000" mapKey="FACILITY_Tracking"/>
++    
++    <DataResource dataResourceId="HELP_FACILITY_PicklistManage" localeString="en" dataResourceTypeId="OFBIZ_FILE" objectInfo="applications/product/data/helpdata/HELP_FACILITY_PicklistManage.xml" dataTemplateTypeId="NONE" statusId="CTNT_IN_PROGRESS" dataResourceName="Help system Facility PicklistManage" mimeTypeId="text/xml" isPublic="Y" />
++    <Content contentId="HELP_FACILITY_PicklistManage" contentTypeId="DOCUMENT" localeString="en" contentName="Facility PicklistManage" templateDataResourceId="HELP_TEMPL" dataResourceId="HELP_FACILITY_PicklistManage" statusId="CTNT_IN_PROGRESS" mimeTypeId="text/html"/>
++    <ContentAssoc contentId="HELP_FACILITY" contentIdTo="HELP_FACILITY_PicklistManage" contentAssocTypeId="TREE_CHILD" fromDate="2006-01-12 01:01:01" sequenceNum="000" mapKey="FACILITY_PicklistManage"/>
+ </entity-engine-xml>
+diff --git a/applications/product/entitydef/entitymodel.xml b/applications/product/entitydef/entitymodel.xml
+index 4cec587..96d0f98 100644
+--- a/applications/product/entitydef/entitymodel.xml
++++ b/applications/product/entitydef/entitymodel.xml
+@@ -2753,6 +2753,7 @@ under the License.
+       <field name="lastModifiedByUserLogin" type="id-vlong"></field>
+       <field name="inShippingBox" type="indicator"></field>
+       <field name="defaultShipmentBoxTypeId" type="id"></field>
++      <field name="lotIdFilledIn" type="long-varchar"><description>Indicate if the lotId must be informed</description></field>
+       <field name="orderDecimalQuantity" type="indicator"><description>use to indicate if decimal quantity can be ordered for this product. Default value is Y</description></field>
+       <prim-key field="productId"/>
+       <relation type="one" fk-name="PROD_TYPE" rel-entity-name="ProductType">
+@@ -3779,6 +3780,7 @@ under the License.
+       <field name="addToCartRemoveIncompat" type="indicator"><description>Default N. If Y then on add to cart remove all products in cart with a ProductAssoc record related to or from the product and with the PRODUCT_INCOMPATABLE type.</description></field>
+       <field name="addToCartReplaceUpsell" type="indicator"><description>Default N. If Y then on add to cart remove all products in cart with a ProductAssoc record related from the product and with the PRODUCT_UPGRADE type.</description></field>
+       <field name="splitPayPrefPerShpGrp" type="indicator"><description>Default N. If Y then before the order is stored the OrderPaymentPreference record will be split, one for each OrderItemShipGroup.</description></field>
++      <field name="managedByLot" type="indicator"><description>If Y, the preparator can choose the InventoryItem by this lotId when he makes the picklist.</description></field>
+       <field name="showOutOfStockProducts" type="indicator"><description>Default Y. If N then out of stock products will not be displayed on site</description></field>
+       <field name="orderDecimalQuantity" type="indicator"><description>use to indicate if decimal quantity can be ordered for this producStore. Default value is Y</description></field>
+         
+diff --git a/applications/product/entitydef/entitymodel_shipment.xml b/applications/product/entitydef/entitymodel_shipment.xml
+index 2893c73..6dfe6aa 100644
+--- a/applications/product/entitydef/entitymodel_shipment.xml
++++ b/applications/product/entitydef/entitymodel_shipment.xml
+@@ -436,6 +436,7 @@ under the License.
+       <alias entity-alias="II" name="quantityOnHandTotal"/>
+       <alias entity-alias="II" name="availableToPromiseTotal"/>
+       <alias entity-alias="II" name="unitCost"/>
++      <alias entity-alias="II" name="lotId"/>
+       <view-link entity-alias="SR" rel-entity-alias="II">
+         <key-map field-name="inventoryItemId"/>
+       </view-link>
+diff --git a/applications/product/script/org/ofbiz/product/inventory/InventoryReserveServices.xml b/applications/product/script/org/ofbiz/product/inventory/InventoryReserveServices.xml
+index 621d66f..7a45033 100644
+--- a/applications/product/script/org/ofbiz/product/inventory/InventoryReserveServices.xml
++++ b/applications/product/script/org/ofbiz/product/inventory/InventoryReserveServices.xml
+@@ -86,6 +86,7 @@ under the License.
+                         <condition-expr field-name="productId" from-field="parameters.productId"/>
+                         <condition-expr field-name="facilityId" from-field="parameters.facilityId" ignore-if-empty="true" ignore-if-null="true"/>
+                         <condition-expr field-name="containerId" from-field="parameters.containerId" ignore-if-empty="true" ignore-if-null="true"/>
++                        <condition-expr field-name="lotId" from-field="parameters.lotId" ignore-if-empty="true" ignore-if-null="true"/>
+                         <condition-expr field-name="quantityOnHandTotal" operator="greater" value="0.0"/>
+                         <condition-expr field-name="locationTypeEnumId" operator="equals" value="FLT_PICKLOC"/>
+                         <condition-expr field-name="statusId" operator="not-equals" value="INV_NS_DEFECTIVE"/>
+@@ -108,6 +109,7 @@ under the License.
+                             <condition-expr field-name="productId" from-field="parameters.productId"/>
+                             <condition-expr field-name="facilityId" from-field="parameters.facilityId" ignore-if-empty="true" ignore-if-null="true"/>
+                             <condition-expr field-name="containerId" from-field="parameters.containerId" ignore-if-empty="true" ignore-if-null="true"/>
++                            <condition-expr field-name="lotId" from-field="parameters.lotId" ignore-if-empty="true" ignore-if-null="true"/>
+                             <condition-expr field-name="quantityOnHandTotal" operator="greater" value="0.0"/>
+                             <condition-expr field-name="locationTypeEnumId" operator="equals" value="FLT_BULK"/>
+                             <condition-expr field-name="statusId" operator="not-equals" value="INV_NS_DEFECTIVE"/>
+@@ -131,6 +133,7 @@ under the License.
+                             <condition-expr field-name="productId" from-field="parameters.productId"/>
+                             <condition-expr field-name="facilityId" from-field="parameters.facilityId" ignore-if-empty="true" ignore-if-null="true"/>
+                             <condition-expr field-name="containerId" from-field="parameters.containerId" ignore-if-empty="true" ignore-if-null="true"/>
++                            <condition-expr field-name="lotId" from-field="parameters.lotId" ignore-if-empty="true" ignore-if-null="true"/>
+                             <condition-expr field-name="quantityOnHandTotal" operator="greater" value="0.0"/>
+                             <condition-expr field-name="locationSeqId" operator="equals" from-field="nullField"/>
+                             <condition-expr field-name="statusId" operator="not-equals" value="INV_NS_DEFECTIVE"/>
+diff --git a/applications/product/script/org/ofbiz/product/inventory/InventoryServices.xml b/applications/product/script/org/ofbiz/product/inventory/InventoryServices.xml
+index 108a889..95627da 100644
+--- a/applications/product/script/org/ofbiz/product/inventory/InventoryServices.xml
++++ b/applications/product/script/org/ofbiz/product/inventory/InventoryServices.xml
+@@ -111,7 +111,60 @@ under the License.
+ 
+     <!-- InventoryItem methods -->
+     <simple-method method-name="createInventoryItem" short-description="Create an InventoryItem">
+-
++        
++        <!-- Create a lot before -->
++        <entity-one value-field="product" entity-name="Product">
++            <field-map from-field="parameters.productId" field-name="productId"/>
++        </entity-one>
++        
++        <!-- Check if this product can or not have a lotId -->
++        <if>
++            <condition>
++                <and>
++                    <if-compare operator="equals" value="Mandatory" field="product.lotIdFilledIn" />
++                    <if-empty field="parameters.lotId" />
++                </and>
++            </condition>
++            <then>
++                <add-error>
++                    <fail-property resource="ProductErrorUiLabels" property="ProductLotIdMandatory"/>
++                </add-error>
++            </then>
++        </if>
++        
++        <if>
++            <condition>
++                <and>
++                    <if-compare operator="equals" value="Forbidden" field="product.lotIdFilledIn" />
++                       <not>
++                           <if-empty field="parameters.lotId" />
++                       </not>
++                </and>
++            </condition>
++            <then>
++                <add-error>
++                    <fail-property resource="ProductErrorUiLabels" property="ProductLotIdForbidden"/>
++                </add-error>
++            </then>
++        </if>
++        
++        <check-errors />
++        
++        <!-- If this InventoryItem is returned by a manufacturing task, don't create a lot -->
++        <if-compare operator="equals" value="N" field="parameters.isReturned">
++            <if-not-empty field="parameters.lotId">
++                  <!-- Check if the lot already exists -->
++                  <entity-and list="lotList" entity-name="Lot">
++                      <field-map field-name="lotId" from-field="parameters.lotId" />
++                  </entity-and>
++                  <if-empty field="lotList">
++                      <make-value value-field="lot" entity-name="Lot"/>
++                      <set field="lot.lotId" from-field="parameters.lotId"/>
++                      <create-value value-field="lot"/>
++                  </if-empty>
++              </if-not-empty>
++          </if-compare>
++          
+         <make-value value-field="inventoryItem" entity-name="InventoryItem"/>
+         <!-- TODO: make sure availableToPromiseTotal and quantityOnHandTotal are not changed -->
+         <set-nonpk-fields map="parameters" value-field="inventoryItem"/>
+@@ -618,6 +671,7 @@ under the License.
+         <set from-field="parameters.partyId" field="lookupFieldMap.partyId"/>
+         <set from-field="parameters.locationSeqId" field="lookupFieldMap.locationSeqId"/>
+         <set from-field="parameters.containerId" field="lookupFieldMap.containerId"/>
++        <set from-field="parameters.lotId" field="lookupFieldMap.lotId"/>
+         <!-- we might get away with a cache here since real serious errors will occur during the reservation service... but only if we need the speed -->
+         <if-compare field="parameters.useCache" operator="equals" value="true" type="Boolean">
+             <!-- if caching was requested, don't use an iterator -->
+diff --git a/applications/product/script/org/ofbiz/shipment/picklist/PicklistServices.xml b/applications/product/script/org/ofbiz/shipment/picklist/PicklistServices.xml
+index f388b9d..04e12a9 100644
+--- a/applications/product/script/org/ofbiz/shipment/picklist/PicklistServices.xml
++++ b/applications/product/script/org/ofbiz/shipment/picklist/PicklistServices.xml
+@@ -917,6 +917,208 @@ under the License.
+         <find-by-primary-key map="lookupPKMap" value-field="lookedUpValue"/>
+         <remove-value value-field="lookedUpValue"/>
+     </simple-method>
++    
++    <!-- Service which edit a PicklistItem when a preparator choose a specified lot for one line order
++        This service is called by the request :
++            - editPicklistItem 
++    -->
++    <simple-method method-name="editPicklistItem" short-description="Edit a Picklist Item">
++        <log level="info"><string>Edit a Picklist Item</string></log>
++        
++        <make-value value-field="lookupPKMap" entity-name="PicklistItem"/>
++        <set-pk-fields map="parameters" value-field="lookupPKMap"/>
++        <find-by-primary-key map="lookupPKMap" value-field="picklistItem"/>
++        
++        <!-- Error if the specified quantity is greater than the picklistItem quantity -->
++        <if-compare-field operator="greater" to-field="picklistItem.quantity" field="parameters.quantity" type="Integer">
++            <add-error>
++                <fail-property resource="ProductErrorUiLabels" property="PicklistManageTooMuchQuantity"/>
++            </add-error>
++        </if-compare-field>
++        
++        <!-- In order to check if there is a link between the lot and the productId,
++            we retrieve all the inventoryItems with this lotId ... -->
++        <entity-condition list="inventoryItemList" entity-name="InventoryItem">
++            <condition-expr field-name="lotId" from-field="parameters.lotId" operator="equals"/>
++        </entity-condition>
++        
++        <set value="ko" field="linkProductAndLot"/>
++        
++        <!-- ... and check if one of the inventoryItems have this productId -->
++        <iterate entry="inventoryItem" list="inventoryItemList">
++            <if-compare-field operator="equals" to-field="inventoryItem.productId" field="parameters.productId">
++                <set value="ok" field="linkProductAndLot"/>
++            </if-compare-field>
++        </iterate>
++        
++        <if-compare field="linkProductAndLot" operator="equals" value="ko">
++            <add-error>
++                <fail-property resource="ProductErrorUiLabels" property="PicklistManageNoLinkProductAndLot"/>
++            </add-error>
++        </if-compare>
++        
++        <check-errors />
++        
++        <set field="inputMap.productId" from-field="parameters.productId"/>
++        <set field="inputMap.facilityId" from-field="parameters.facilityId"/>
++        <set field="inputMap.lotId" from-field="parameters.lotId"/>
++        
++        <!-- Check the stock of this lot -->
++        <call-service service-name="getInventoryAvailableByFacility" in-map-name="inputMap">
++           <result-to-field field="quantityOnHandTotal" result-name="quantityOnHandTotal"/>
++           <result-to-field field="availableToPromiseTotal" result-name="availableToPromiseTotal"/>
++        </call-service>
++        
++        <if>
++            <condition>
++                <if-compare-field operator="greater" field="parameters.quantity" to-field="availableToPromiseTotal" type="Integer"/>
++            </condition>
++            <then>
++                <add-error>
++                    <fail-property resource="ProductErrorUiLabels" property="PicklistManageStockLow"/>
++                </add-error>
++            </then>
++        </if>
++        
++        <check-errors />
++        
++           <!-- Retreive the informations about the OrderItemShipGrpInvRes of the edited PicklistItem -->
++           <entity-one value-field="oisgir" entity-name="OrderItemShipGrpInvRes">
++               <field-map from-field="parameters.orderId" field-name="orderId"/>
++               <field-map from-field="parameters.shipGroupSeqId" field-name="shipGroupSeqId"/>
++               <field-map from-field="parameters.orderItemSeqId" field-name="orderItemSeqId"/>
++               <field-map from-field="parameters.inventoryItemId" field-name="inventoryItemId"/>
++           </entity-one>
++           
++           <!-- We remove the edited PicklistItem ... -->
++           <remove-value value-field="picklistItem"/>
++           
++           <!-- ... and its OrderItemShipGrpInvRes -->
++           <set-service-fields map="parameters" to-map="cancelOrderItemShipGrpInvResMap" service-name="cancelOrderItemShipGrpInvRes"/>
++           <call-service service-name="cancelOrderItemShipGrpInvRes" in-map-name="cancelOrderItemShipGrpInvResMap"/>
++           
++           <clear-field field="inputMap"/>
++           
++           <!-- We create new(s) OrderItemShipGrpInvRes with the new InventoryItem (with the specified lot) -->
++           <set from-field="parameters.orderId" field="inputMap.orderId"/>
++           <set from-field="parameters.shipGroupSeqId" field="inputMap.shipGroupSeqId"/>
++           <set from-field="parameters.orderItemSeqId" field="inputMap.orderItemSeqId"/>
++           <set from-field="parameters.productId" field="inputMap.productId"/>
++           <set from-field="parameters.quantity" field="inputMap.quantity"/>
++           <set from-field="parameters.facilityId" field="inputMap.facilityId" />
++           <set value="Y" field="inputMap.requireInventory"/>
++           <set from-field="oisgir.reserveOrderEnumId" field="inputMap.reserveOrderEnumId"/>
++           <set from-field="parameters.lotId" field="inputMap.lotId"/>
++           
++           <call-service service-name="reserveProductInventoryByFacility" in-map-name="inputMap" />
++           
++           <!-- If the new OrderItemShipGrpInvRes don't contains all of the item, we recreate OrderItemShipGrpInvRes
++               with the previous parameters -->
++           <if-compare-field operator="less" field="parameters.quantity" to-field="picklistItem.quantity" type="Integer">
++               <clear-field field="inputMap"/>
++               
++               <set from-field="parameters.orderId" field="inputMap.orderId"/>
++               <set from-field="parameters.shipGroupSeqId" field="inputMap.shipGroupSeqId"/>
++               <set from-field="parameters.orderItemSeqId" field="inputMap.orderItemSeqId"/>
++               <set from-field="parameters.productId" field="inputMap.productId"/>
++               <set from-field="parameters.facilityId" field="inputMap.facilityId" />
++               
++               <if-not-empty field="parameters.oldLotId">
++                   <set from-field="parameters.oldLotId" field="inputMap.lotId" />
++               </if-not-empty>
++               
++               <calculate field="quantity">
++                   <calcop operator="subtract" field="picklistItem.quantity">
++                       <calcop operator="get" field="parameters.quantity"/>
++                   </calcop>
++               </calculate>
++               
++               <set from-field="quantity" field="inputMap.quantity"/>
++               <set value="Y" field="inputMap.requireInventory"/>
++               <set from-field="oisgir.reserveOrderEnumId" field="inputMap.reserveOrderEnumId"/>
++               
++               <call-service service-name="reserveProductInventoryByFacility" in-map-name="inputMap"/>
++           </if-compare-field>
++           
++           <entity-condition list="oisgirs" entity-name="OrderItemShipGrpInvRes">
++               <condition-list>
++                <condition-expr from-field="parameters.orderId" field-name="orderId" operator="equals"/>
++                <condition-expr from-field="parameters.shipGroupSeqId" field-name="shipGroupSeqId" operator="equals"/>
++                <condition-expr from-field="parameters.orderItemSeqId" field-name="orderItemSeqId" operator="equals"/>
++               </condition-list>
++           </entity-condition>
++           
++           <set from-field="picklistItem.picklistBinId" field="picklistBinId"/>
++           
++           <entity-condition list="picklistItemList" entity-name="PicklistItem">
++               <condition-list>
++                <condition-expr from-field="parameters.orderId" field-name="orderId" operator="equals"/>
++                <condition-expr from-field="parameters.shipGroupSeqId" field-name="shipGroupSeqId" operator="equals"/>
++                <condition-expr from-field="parameters.orderItemSeqId" field-name="orderItemSeqId" operator="equals"/>
++                <condition-expr from-field="picklistBinId" field-name="picklistBinId" operator="equals" />
++               </condition-list>
++           </entity-condition>
++           
++           <clear-field field="inputMap"/>
++           
++           <!-- We create the PicklistItem who correspond at the new(s) OrderItemShipGrpInvRes -->
++           <iterate entry="oisgir" list="oisgirs">
++               
++               <!-- actionOnPli can have 3 values :
++                   - new : the picklistItem has never existed and is created by this service
++                   - edit : the picklistItem exists but we need to modify its quantity
++                   - none : the picklistItem exists and this service haven't to touch at this one. -->
++               <set field="actionOnPli" value="new" />
++               
++               <if-not-empty field="oisgir.quantityNotAvailable">
++                   <calculate field="quantity">
++                       <calcop operator="subtract" field="oisgir.quantity">
++                           <calcop operator="get" field="oisgir.quantityNotAvailable"/>
++                       </calcop>
++                   </calculate>
++                   <else>
++                       <set field="quantity" from-field="oisgir.quantity"/>
++                   </else>
++               </if-not-empty>
++               
++               <iterate entry="pli" list="picklistItemList">
++                   <if-compare-field operator="equals" field="pli.inventoryItemId" to-field="oisgir.inventoryItemId">
++                       <if-compare-field operator="equals" field="pli.quantity" to-field="quantity">
++                           <set field="actionOnPli" value="none" />
++                           <else>
++                               <set field="actionOnPli" value="edit" />
++                               <set field="currentPli" value="pli"/>
++                           </else>
++                       </if-compare-field>
++                   </if-compare-field>
++               </iterate>
++               
++               <if-compare operator="equals" value="new" field="actionOnPli">
++                   
++                   <set from-field="oisgir.inventoryItemId" field="inputMap.inventoryItemId" />
++                   <set from-field="oisgir.orderId" field="inputMap.orderId" />
++                   <set from-field="oisgir.orderItemSeqId" field="inputMap.orderItemSeqId" />
++                   <set from-field="picklistBinId" field="inputMap.picklistBinId" />
++                   <set from-field="quantity" field="inputMap.quantity" />
++                   <set from-field="oisgir.shipGroupSeqId" field="inputMap.shipGroupSeqId" />
++                   
++                   <call-service service-name="createPicklistItem" in-map-name="inputMap" />
++               </if-compare>
++               
++               <if-compare operator="equals" value="edit" field="actionOnPli">
++                   <set from-field="oisgir.inventoryItemId" field="inputMap.inventoryItemId" />
++                   <set from-field="oisgir.orderId" field="inputMap.orderId" />
++                   <set from-field="oisgir.orderItemSeqId" field="inputMap.orderItemSeqId" />
++                   <set from-field="picklistBinId" field="inputMap.picklistBinId" />
++                   <set from-field="quantity" field="inputMap.quantity" />
++                   <set from-field="oisgir.shipGroupSeqId" field="inputMap.shipGroupSeqId" />
++                   
++                   <call-service service-name="updatePicklistItem" in-map-name="inputMap" />
++               </if-compare>
++           </iterate>
++        
++    </simple-method>
++    
+     <simple-method method-name="setPicklistItemToComplete" short-description="Set the status of a pick list item to completed">
+         <check-permission permission="FACILITY" action="_UPDATE">
+             <fail-property resource="ProductUiLabels" property="ProductFacilityUpdatePermissionError"/>
+@@ -1217,6 +1419,7 @@ under the License.
+             <clear-field field="picklistBinInfo"/>
+             <get-related-one value-field="picklistBin" relation-name="PrimaryOrderHeader" to-value-field="picklistBinInfo.primaryOrderHeader"/>
+             <get-related-one value-field="picklistBin" relation-name="PrimaryOrderItemShipGroup" to-value-field="picklistBinInfo.primaryOrderItemShipGroup"/>
++            <get-related-one value-field="picklistBinInfo.primaryOrderHeader" relation-name="ProductStore" to-value-field="picklistBinInfo.productStore" />
+ 
+             <clear-field field="picklistItemInfoList"/>
+             <get-related value-field="picklistBin" relation-name="PicklistItem" list="picklistItemList" use-cache="true"/>
+diff --git a/applications/product/servicedef/services_facility.xml b/applications/product/servicedef/services_facility.xml
+index f4ceed6..d63bd9c 100644
+--- a/applications/product/servicedef/services_facility.xml
++++ b/applications/product/servicedef/services_facility.xml
+@@ -44,6 +44,7 @@ under the License.
+             <exclude field-name="availableToPromiseTotal"/>
+             <exclude field-name="quantityOnHandTotal"/>
+         </auto-attributes>
++        <attribute name="isReturned" mode="IN" type="String" default-value="N" />
+         <override name="inventoryItemTypeId" optional="false"/>
+         <override name="productId" optional="false"/>
+         <override name="facilityId" optional="false"/>
+@@ -164,6 +165,7 @@ under the License.
+         <attribute name="productId" type="String" mode="IN" optional="false"/>
+         <attribute name="facilityId" type="String" mode="IN" optional="false"/>
+         <attribute name="statusId" type="String" mode="IN" optional="true"/>
++        <attribute name="lotId" mode="IN" type="String" optional="true"/>
+         <attribute name="quantityOnHandTotal" type="BigDecimal" mode="OUT" optional="false"/>
+         <attribute name="availableToPromiseTotal" type="BigDecimal" mode="OUT" optional="false"/>
+         <attribute name="useCache" type="Boolean" mode="IN" optional="true"/>
+@@ -330,6 +332,7 @@ under the License.
+         <attribute name="requireInventory" type="String" mode="IN" optional="false"/>
+         <attribute name="reserveOrderEnumId" type="String" mode="IN" optional="false"/>
+         <attribute name="sequenceId" type="Long" mode="IN" optional="true"/>
++        <attribute name="lotId" mode="IN" type="String" optional="true" />
+         <attribute name="quantityNotReserved" type="BigDecimal" mode="OUT" optional="false"/>
+     </service>
+     <service name="reserveProductInventoryByFacility" engine="simple"
+@@ -350,6 +353,7 @@ under the License.
+         <attribute name="sequenceId" type="Long" mode="IN" optional="true"/>
+         <attribute name="quantityNotReserved" type="BigDecimal" mode="OUT" optional="false"/>
+         <attribute name="priority" type="String" mode="IN"  optional="true"/>
++        <attribute name="lotId" type="String" mode="IN" optional="true" />
+     </service>
+     <service name="reserveProductInventoryByContainer" engine="simple"
+                 location="component://product/script/org/ofbiz/product/inventory/InventoryReserveServices.xml" invoke="reserveProductInventory" auth="true">
+diff --git a/applications/product/servicedef/services_picklist.xml b/applications/product/servicedef/services_picklist.xml
+index db0d2ec..0423bad 100644
+--- a/applications/product/servicedef/services_picklist.xml
++++ b/applications/product/servicedef/services_picklist.xml
+@@ -163,6 +163,16 @@ under the License.
+         <description>Delete PicklistItem</description>
+         <auto-attributes include="pk" mode="IN" optional="false"/>
+     </service>
++    <service name="editPicklistItem" default-entity-name="PicklistItem" engine="simple"
++            location="component://product/script/org/ofbiz/shipment/picklist/PicklistServices.xml" invoke="editPicklistItem" auth="true">
++        <description>Edit PicklistItem</description>
++        <auto-attributes include="pk" mode="IN" optional="false"/>
++        <attribute name="lotId" mode="IN" type="String" optional="false" />
++        <attribute name="quantity" mode="IN" type="BigDecimal" optional="false" />
++        <attribute name="productId" mode="IN" type="String" optional="false" />
++        <attribute name="facilityId" mode="IN" type="String" optional="false" />
++        <attribute name="oldLotId" mode="IN" type="String" optional="true" />
++    </service>
+     <service name="setPicklistItemToComplete" default-entity-name="PicklistItem" engine="simple"
+             location="component://product/script/org/ofbiz/shipment/picklist/PicklistServices.xml" invoke="setPicklistItemToComplete" auth="true">
+         <description>Update PicklistItem's Status to COMPLETE</description>
+diff --git a/applications/product/webapp/facility/WEB-INF/controller.xml b/applications/product/webapp/facility/WEB-INF/controller.xml
+index 906bd48..a6299e6 100644
+--- a/applications/product/webapp/facility/WEB-INF/controller.xml
++++ b/applications/product/webapp/facility/WEB-INF/controller.xml
+@@ -654,6 +654,12 @@ under the License.
+         <response name="success" type="view" value="PicklistManage"/>
+         <response name="error" type="view" value="PicklistManage"/>
+     </request-map>
++    <request-map uri="editPicklistItem">
++        <security https="true" auth="true" />
++        <event type="service" path="" invoke="editPicklistItem"/>
++        <response name="success" type="view" value="PicklistManage"/>
++        <response name="error" type="view" value="PicklistManage"/>
++    </request-map>
+ 
+     <request-map uri="PicklistReport.pdf">
+         <security https="true" auth="true"/>
+@@ -1346,6 +1352,10 @@ under the License.
+         <response name="success" type="request" value="json"/>
+         <response name="error" type="request" value="json"/>
+     </request-map>
++    <request-map uri="Tracking">
++        <security https="true" auth="true" />
++        <response name="success" type="view" value="Tracking" />
++    </request-map>
+     <!-- ================ Lookup Requests ================= -->
+     <request-map uri="LookupOrderHeaderAndShipInfo"><security https="true" auth="true"/><response name="success" type="view" value="LookupOrderHeaderAndShipInfo"/></request-map>
+     <request-map uri="LookupPurchaseOrderHeaderAndShipInfo"><security https="true" auth="true"/><response name="success" type="view" value="LookupPurchaseOrderHeaderAndShipInfo"/></request-map>
+@@ -1461,6 +1471,8 @@ under the License.
+     <view-map name="LookupPartyName" type="screen" page="component://party/widget/partymgr/LookupScreens.xml#LookupPartyName"/>
+     <view-map name="LookupInventoryItem" type="screen" page="component://product/widget/facility/LookupScreens.xml#LookupInventoryItem"/>
+     <view-map name="LookupContent" type="screen" page="component://content/widget/content/ContentScreens.xml#LookupContent"/>
++    
++    <view-map name="Tracking" page="component://product//widget/facility/TrackingScreens.xml#LookingForTracking" type="screen" />
+ 
+     <!-- Shipment Gateway Config -->
+     <view-map name="FindShipmentGatewayConfig" page="component://product//widget/facility/ShipmentGatewayConfigScreens.xml#FindShipmentGatewayConfig" type="screen"/>
+diff --git a/applications/product/webapp/facility/facility/PicklistManage.ftl b/applications/product/webapp/facility/facility/PicklistManage.ftl
+index 50c213d..c164e9f 100644
+--- a/applications/product/webapp/facility/facility/PicklistManage.ftl
++++ b/applications/product/webapp/facility/facility/PicklistManage.ftl
+@@ -173,6 +173,56 @@ under the License.
+                                 </#list>
+                                 </table>
+                             </div>
++                            <#if picklistBinInfo.productStore.managedByLot?exists && picklistBinInfo.productStore.managedByLot = "Y">
++                              <div style="margin-left: 30px;">
++                                <table class="basic-table" cellspacing="0">
++                                  <tr class="header-row"
++                                    <td>${uiLabelMap.ProductOrderId}</td>
++                                    <td>${uiLabelMap.ProductOrderShipGroupId}</td>
++                                    <td>${uiLabelMap.ProductOrderItem}</td>
++                                    <td>${uiLabelMap.ProductProduct}</td>
++                                    <td>${uiLabelMap.ProductInventoryItem}</td>
++                                    <td>${uiLabelMap.ProductLotId}</td>
++                                    <td>${uiLabelMap.ProductQuantity}</td>
++                                    <td>&nbsp;</td>
++                                    </tr>
++                                    <#assign alt_row = false>
++                                    <#list picklistBinInfo.picklistItemInfoList?if_exists as picklistItemInfo>
++                                      <#assign picklistItem = picklistItemInfo.picklistItem>
++                                      <#assign inventoryItemAndLocation = picklistItemInfo.inventoryItemAndLocation>
++                                      <#if !picklistItemInfo.product.lotIdFilledIn?has_content || picklistItemInfo.product.lotIdFilledIn != "Forbidden">
++                                        <form name="editPicklistItem_${picklist.picklistId}_${picklistItem.orderId}_${picklistItemInfo_index}" method="post" action="<@ofbizUrl>editPicklistItem</@ofbizUrl>">
++                                          <tr valign="middle"<#if alt_row> class="alternate-row"</#if>>
++                                            <td>${picklistItem.orderId}</td>
++                                            <td>${picklistItem.shipGroupSeqId}</td>
++                                            <td>${picklistItem.orderItemSeqId}</td>
++                                            <td>${picklistItemInfo.orderItem.productId}<#if picklistItemInfo.orderItem.productId != inventoryItemAndLocation.productId>&nbsp;[${inventoryItemAndLocation.productId}]</#if></td>
++                                            <td>${inventoryItemAndLocation.inventoryItemId}</td>
++                                            <td><input type="text" name="lotId" <#if inventoryItemAndLocation.lotId?has_content>value="${inventoryItemAndLocation.lotId}"</#if> /></td>
++                                            <td><input type="text" name="quantity" value="${picklistItem.quantity}" /></td>
++                                            <td>
++                                              <input type="hidden" name="picklistBinId" value="${picklistItemInfo.picklistItem.picklistBinId}"/>
++                                              <input type="hidden" name="orderId" value= "${picklistItemInfo.picklistItem.orderId}"/>
++                                              <input type="hidden" name="orderItemSeqId" value="${picklistItemInfo.picklistItem.orderItemSeqId}"/>
++                                              <input type="hidden" name="shipGroupSeqId" value="${picklistItemInfo.picklistItem.shipGroupSeqId}"/>
++                                              <input type="hidden" name="inventoryItemId" value="${picklistItemInfo.picklistItem.inventoryItemId}"/>
++                                              <input type="hidden" name="facilityId" value="${facilityId?if_exists}"/>
++                                              <input type="hidden" name="productId" value="${picklistItemInfo.orderItem.productId}" />
++                                              <#if inventoryItemAndLocation.lotId?has_content>
++                                              <input type="hidden" name="oldLotId" value="${inventoryItemAndLocation.lotId}" />
++                                              </#if>
++                                              <a href='javascript:document.editPicklistItem_${picklist.picklistId}_${picklistItem.orderId}_${picklistItemInfo_index}.submit()' class='buttontext'>&nbsp;${uiLabelMap.CommonEdit}&nbsp;</a>
++                                            </td>
++                                          </tr>
++                                        </form>
++                                        <#-- toggle the row color -->
++                                        <#assign alt_row = !alt_row>
++                                      </#if>
++                                    </#list>
++                                </table>
++                              </div>
++                            </#if>
++                            </#if>
+                         </#if>
+                     </#if>
+                 </#list>
+diff --git a/applications/product/webapp/facility/inventory/receiveInventory.ftl b/applications/product/webapp/facility/inventory/receiveInventory.ftl
+index 58c8220..f5aed83 100644
+--- a/applications/product/webapp/facility/inventory/receiveInventory.ftl
++++ b/applications/product/webapp/facility/inventory/receiveInventory.ftl
+@@ -38,6 +38,7 @@ under the License.
+               <td>${uiLabelMap.ProductPo}</td>
+               <td>${uiLabelMap.ProductLine}</td>
+               <td>${uiLabelMap.ProductProductId}</td>
++              <td>${uiLabelMap.ProductLotId}</td>
+               <td>${uiLabelMap.ProductPerUnitPrice}</td>
+               <td>${uiLabelMap.CommonRejected}</td>
+               <td>${uiLabelMap.CommonAccepted}</td>
+@@ -55,6 +56,7 @@ under the License.
+                   <td><a href="/ordermgr/control/orderview?orderId=${item.orderId}" class="buttontext">${item.orderId}</a></td>
+                   <td>${item.orderItemSeqId}</td>
+                   <td>${item.productId?default("Not Found")}</td>
++                  <td>${item.lotId?default("")}</td>
+                   <td>${item.unitCost?default(0)?string("##0.00")}</td>
+                   <td>${item.quantityRejected?default(0)?string.number}</td>
+                   <td>${item.quantityAccepted?string.number}</td>
+@@ -449,7 +451,17 @@ under the License.
+                             <input type="text" name="quantityRejected_o_${rowCount}" value="0" size="6"/>
+                           </td>
+                           <tr>
+-                            <td colspan="4" align="right">${uiLabelMap.OrderQtyOrdered} :</td>
++                            <td>&nbsp;</td>
++                            <#if !product.lotIdFilledIn?has_content || product.lotIdFilledIn != "Forbidden">
++                              <td align="right">${uiLabelMap.ProductLotId}</td>
++                              <td align="right">
++                                <input type="text" name="lotId_o_${rowCount}" size="20" />
++                              </td>
++                            <#else />
++                              <td align="right">&nbsp;</td>
++                              <td align="right">&nbsp;</td>
++                            </#if>
++                            <td align="right">${uiLabelMap.OrderQtyOrdered} :</td>
+                             <td align="right">
+                               <input type="text" class="inputBox" name="quantityOrdered" value="${orderItem.quantity}" size="6" maxlength="20" disabled="disabled" />
+                             </td>
+@@ -473,7 +485,7 @@ under the License.
+                               ${currencyUomId?if_exists}
+                             </td>
+                           <#else>
+-                            <td>${uiLabelMap.ProductPerUnitPrice}:</td>
++                            <td align="right">${uiLabelMap.ProductPerUnitPrice}:</td>
+                             <td align="right">
+                               <input type="hidden" name="currencyUomId_o_${rowCount}" value="${currencyUomId?if_exists}" />
+                               <input type="text" name="unitCost_o_${rowCount}" value="${itemCost}" size="6" maxlength="20" />
+diff --git a/applications/product/widget/catalog/ProductForms.xml b/applications/product/widget/catalog/ProductForms.xml
+index b85bae5..e0f04fd 100644
+--- a/applications/product/widget/catalog/ProductForms.xml
++++ b/applications/product/widget/catalog/ProductForms.xml
+@@ -123,6 +123,14 @@ under the License.
+         </field>
+         <field name="inventoryMessage" title="${uiLabelMap.ProductInventoryMessage}"><text size="20" maxlength="255"/></field>
+ 
++        <field name="lotIdFilledIn" title="${uiLabelMap.ProductLotId}">
++            <drop-down allow-empty="false">
++                <option key="Allowed" description="${uiLabelMap.lotIdFilledInAllowed}"/>
++                <option key="Mandatory" description="${uiLabelMap.lotIdFilledInMandatory}"/>
++                <option key="Forbidden" description="${uiLabelMap.lotIdFilledInForbidden}"/>
++            </drop-down>
++        </field>
++
+         <field position="1" name="ratingTypeEnum" title="${uiLabelMap.ProductRatingTypeEnum}">
+             <drop-down allow-empty="true">
+                 <entity-options entity-name="Enumeration" key-field-name="enumId" description="${description}">
+@@ -290,6 +298,7 @@ under the License.
+                 <sort-field name="requirementMethodEnumId"/>
+                 <sort-field name="requireInventory"/>
+                 <sort-field name="inventoryMessage"/>
++                <sort-field name="lotIdFilledIn"/>
+             </field-group>
+             <field-group title="${uiLabelMap.CommonRate}" collapsible="true" initially-collapsed="true">
+                 <sort-field name="ratingTypeEnum"/>
+diff --git a/applications/product/widget/catalog/ProductStoreForms.xml b/applications/product/widget/catalog/ProductStoreForms.xml
+index 17ee234..280f9af 100644
+--- a/applications/product/widget/catalog/ProductStoreForms.xml
++++ b/applications/product/widget/catalog/ProductStoreForms.xml
+@@ -237,6 +237,12 @@
+             </drop-down>
+         </field>
+         <field name="oldStyleSheet"><hidden/></field>
++        <field name="managedByLot" title="${uiLabelMap.ProductManagedByLot}">
++            <drop-down allow-empty="false" no-current-selected-key="N">
++                <option key="Y" description="${uiLabelMap.CommonY}"/>
++                <option key="N" description="${uiLabelMap.CommonN}"/>
++            </drop-down>
++        </field>
+         <field name="oldHeaderLogo"><hidden/></field>
+         <field name="oldHeaderMiddleBackground"><hidden/></field>
+         <field name="oldHeaderRightBackground"><hidden/></field>
+@@ -330,7 +336,8 @@
+                 <sort-field name="reserveInventory"/>
+                 <sort-field name="reserveOrderEnumId"/>
+                 <sort-field name="balanceResOnOrderCreation"/>
+-                <sort-field name="showOutOfStockProducts"/>                                
++                <sort-field name="showOutOfStockProducts"/>   
++                <sort-field name="managedByLot"/>
+             </field-group>
+             <field-group title="${uiLabelMap.CommonShoppingCart}" collapsible="true" initially-collapsed="true">
+                 <sort-field name="viewCartOnAdd"/>
+diff --git a/applications/product/widget/facility/FacilityMenus.xml b/applications/product/widget/facility/FacilityMenus.xml
+index 77e226d..48da994 100644
+--- a/applications/product/widget/facility/FacilityMenus.xml
++++ b/applications/product/widget/facility/FacilityMenus.xml
+@@ -40,6 +40,7 @@ under the License.
+                 <parameter param-name="facilityId"/>
+             </link>
+         </menu-item>
++        <menu-item name="tracking" title="${uiLabelMap.Tracking}"><link target="Tracking"/></menu-item>
+     </menu>
+ 
+     <menu name="FacilityTabBar" extends="CommonTabBarMenu" extends-resource="component://common/widget/CommonMenus.xml"
+-- 
+1.7.2.2
+

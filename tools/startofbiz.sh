@@ -29,13 +29,13 @@ rm -f $OFBIZ_LOG
 
 # VM args
 #DEBUG="-Dsun.rmi.server.exceptionTrace=true"
-#DEBUG="-Xdebug -Xnoagent -Djava.compiler=NONE -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8091"
+DEBUG="-Xdebug -Xnoagent -Djava.compiler=NONE -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8091"
 #automatic IP address for linux
 #IPADDR=`/sbin/ifconfig eth0 | grep 'inet addr:' | cut -d: -f2 | awk '{ print $1}'`
 #RMIIF="-Djava.rmi.server.hostname=$IPADDR"
 MEMIF="-Xms128M -Xmx512M -XX:MaxPermSize=512m"
 #JMX="-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=33333 -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false"
-#MISC="-Duser.language=en"
+MISC="-Duser.language=en"
 VMARGS="$MEMIF $MISC $JMX $DEBUG $RMIIF"
 
 # Worldpay Config

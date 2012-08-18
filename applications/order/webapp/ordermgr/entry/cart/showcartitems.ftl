@@ -210,10 +210,11 @@ under the License.
               </td>
             </tr>
 
-            <#-- Show Associated Products (not for Variants) -->
+            <#-- Show Associated Products (not for Variants)
             <#if cartLine.getProductId()?exists>
-              <#assign itemProductAssocList = cartLine.getProduct().getRelated("MainProductAssoc", Static["org.ofbiz.base.util.UtilMisc"].toList("productAssocTypeId", "sequenceNum"), false)?if_exists/>
+              <#assign itemProductAssocList = (cartLine.getProduct().getRelated("MainProductAssoc", Static["org.ofbiz.base.util.UtilMisc"].toList("productAssocTypeId", "sequenceNum"), null, false))?if_exists/>
             </#if>
+            -->
             <#if itemProductAssocList?exists && itemProductAssocList?has_content>
               <tr><td colspan="8"><hr /></td></tr>
               <tr>

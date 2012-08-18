@@ -470,6 +470,7 @@ under the License.
             <field-to-result field="parameters.quantity" result-name="quantityNotReserved"/>
             <return response-code="success"/>
         </if-compare>
+        <log level="info" message="ProductStore with id ${productStore.productStoreId}, is set to reserve inventory"/>
 
         <call-simple-method method-name="isStoreInventoryRequiredInline"/>
 
@@ -638,6 +639,7 @@ under the License.
             <field-to-result field="available"/>
             <return/>
         </if-compare>
+        <log level="info" message="Inventory check required for ${productStore.productStoreId}"/>
 
         <if-compare value="Y" operator="equals" field="productStore.oneInventoryFacility">
             <if-empty field="productStore.inventoryFacilityId">
@@ -736,8 +738,10 @@ under the License.
             <set from-field="parameters.product" field="product"/>
         </else>
         </if-empty>
+        <log level="info" message="isStoreInventoryAvailableOrNotRequired productStore=${productStore.storeName} product=${product.productId}"/>
 
         <call-simple-method method-name="isStoreInventoryRequiredInline"/>
+        <log level="info" message="isStoreInventoryRequiredInline requireInventory=${requireInventory}"/>
 
         <if-compare field="requireInventory" operator="not-equals" value="Y">
             <set value="Y" field="availableOrNotRequired"/>

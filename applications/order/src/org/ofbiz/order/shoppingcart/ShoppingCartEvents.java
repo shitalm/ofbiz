@@ -152,6 +152,12 @@ public class ShoppingCartEvents {
 
         // not used right now: Map attributes = null;
         String catalogId = CatalogWorker.getCurrentCatalogId(request);
+        try {
+            GenericValue catalog = delegator.findOne("Catalog", UtilMisc.toMap("catalogId",catalogId), true);
+            Debug.logInfo("addToCart::Catalog: " + catalog.get("name"), "");
+        } catch (GenericEntityException e) {
+            e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+        }
         Locale locale = UtilHttp.getLocale(request);
        
         // Get the parameters as a MAP, remove the productId and quantity params.
